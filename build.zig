@@ -34,12 +34,30 @@ pub fn build(b: *std.Build) void {
 
     const options_module = options_step.createModule();
 
+    const glfw3_translate = b.addTranslateC(.{
+        .root_source_file = b.path("libs/glfw/include/GLFW/glfw3.h"),
+        .target = target,
+        .optimize = optimize,
+    });
+    glfw3_translate.addIncludePath(b.path("libs/glfw/include"));
+    if (target.result.os.tag == .emscripten) {
+        if (b.sysroot) |sysroot| {
+            const em_inc = std.fs.path.join(b.allocator, &.{ sysroot, "include" }) catch @panic("OOM");
+            glfw3_translate.addSystemIncludePath(.{ .cwd_relative = em_inc });
+        }
+    } else if (target.result.os.tag == .linux) {
+        if (b.lazyDependency("system_sdk", .{})) |system_sdk| {
+            glfw3_translate.addSystemIncludePath(system_sdk.path("linux/include"));
+        }
+    }
+
     const module = b.addModule("root", .{
         .root_source_file = b.path("src/zglfw.zig"),
         .imports = &.{
             .{ .name = "zglfw_options", .module = options_module },
         },
     });
+    module.addImport("c", glfw3_translate.createModule());
 
     if (target.result.os.tag == .emscripten) return;
 
@@ -89,7 +107,7 @@ pub fn build(b: *std.Build) void {
                     src_dir ++ "win32_window.c",
                     src_dir ++ "win32_module.c",
                 },
-                .flags = &.{"-D_GLFW_WIN32"},
+                .flags = &.{ "-D_GLFW_WIN32", "-fno-sanitize=undefined" },
             });
         },
         .macos => {
@@ -141,7 +159,7 @@ pub fn build(b: *std.Build) void {
                     src_dir ++ "posix_thread.c",
                     src_dir ++ "posix_module.c",
                 },
-                .flags = &.{},
+                .flags = &.{"-fno-sanitize=undefined"},
             });
             if (options.enable_x11 or options.enable_wayland) {
                 glfw.root_module.addCSourceFiles(.{
@@ -150,7 +168,7 @@ pub fn build(b: *std.Build) void {
                         src_dir ++ "linux_joystick.c",
                         src_dir ++ "posix_poll.c",
                     },
-                    .flags = &.{},
+                    .flags = &.{"-fno-sanitize=undefined"},
                 });
             }
             if (options.enable_x11) {
@@ -161,7 +179,7 @@ pub fn build(b: *std.Build) void {
                         src_dir ++ "x11_window.c",
                         src_dir ++ "glx_context.c",
                     },
-                    .flags = &.{},
+                    .flags = &.{"-fno-sanitize=undefined"},
                 });
                 glfw.root_module.addCMacro("_GLFW_X11", "1");
                 glfw.root_module.linkSystemLibrary("X11", .{});
@@ -173,7 +191,7 @@ pub fn build(b: *std.Build) void {
                         src_dir ++ "wl_monitor.c",
                         src_dir ++ "wl_window.c",
                     },
-                    .flags = &.{},
+                    .flags = &.{"-fno-sanitize=undefined"},
                 });
                 glfw.root_module.addIncludePath(b.path(src_dir ++ "wayland"));
                 glfw.root_module.addCMacro("_GLFW_WAYLAND", "1");
